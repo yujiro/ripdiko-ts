@@ -1,5 +1,6 @@
 import {JSDOM} from "jsdom"
 import {DateTime} from "luxon"
+import { Program } from "./Program"
 
 export class DownloadTask {
     public async authenticate(): Promise<{token?: string, areaCode?: string}> {
@@ -55,28 +56,39 @@ export class DownloadTask {
         return {token, areaCode: authCodes[0]}
     }
 
-    public async nowPlaying(station: string, areaCode: string) {
+    public async nowPlaying(station: string, areaCode: string): Promise<Program | null> {
         const res = await fetch(`https://radiko.jp/v3/program/now/${areaCode}.xml`)
         const xml = await res.text()
         const jsdom = new JSDOM()
         const parser = new jsdom.window.DOMParser();
         const doc = parser.parseFromString(xml, "text/xml")
         const now = Number(DateTime.local().toFormat("yyyyMMddHHmmss"))
-        const nowPlaying = doc.querySelectorAll(`station[id="${station}"] prog`).forEach((prog) => {
-            const start = Number(prog.getAttribute("ft"))
-            const end = Number(prog.getAttribute("to"))
+        let program = null
 
-            if (start <= now && now < end) {
-                console.log({
+        doc.querySelectorAll(`station[id="${station}"] prog`).forEach((prog) => {
+            const from = Number(prog.getAttribute("ft"))
+            const to = Number(prog.getAttribute("to"))
+
+            if (from <= now && now < to) {
+                program = new Program({
+                    id: `${prog.getAttribute("ft")}-${station}`,
+                    station: this.val(doc, "name"),
                     title: this.val(prog, "title"),
-                    start: DateTime.fromFormat(start.toString(), "yyyyMMddHHmmss").toFormat("HH:mm"),
-                    end: DateTime.fromFormat(end.toString(), "yyyyMMddHHmmss").toFormat("HH:mm")
+                    from,
+                    to,
+                    duration: Number(prog.getAttribute("dur")),
+                    performer: this.val(prog, "pfm"),
+                    info: this.val(prog, "info"),
+                    image: this.val(prog, "img"),
+                    url: this.val(prog, "url"),
                 })
             }
         })
+
+        return program
     }
 
-    private val(node: Element, tagName: string) {
+    private val(node: Document | Element, tagName: string) {
         const elem = node.querySelector(tagName)
 
         if (elem) {
