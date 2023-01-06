@@ -1,3 +1,6 @@
+import {JSDOM} from "jsdom"
+import {DateTime} from "luxon"
+
 export class DownloadTask {
     public async authenticate(): Promise<{token?: string, areaCode?: string}> {
         const res = await fetch("https://radiko.jp/apps/js/playerCommon.js?_=20171113")
@@ -50,6 +53,37 @@ export class DownloadTask {
         }   
     
         return {token, areaCode: authCodes[0]}
+    }
+
+    public async nowPlaying(station: string, areaCode: string) {
+        const res = await fetch(`https://radiko.jp/v3/program/now/${areaCode}.xml`)
+        const xml = await res.text()
+        const jsdom = new JSDOM()
+        const parser = new jsdom.window.DOMParser();
+        const doc = parser.parseFromString(xml, "text/xml")
+        const now = Number(DateTime.local().toFormat("yyyyMMddHHmmss"))
+        const nowPlaying = doc.querySelectorAll(`station[id="${station}"] prog`).forEach((prog) => {
+            const start = Number(prog.getAttribute("ft"))
+            const end = Number(prog.getAttribute("to"))
+
+            if (start <= now && now < end) {
+                console.log({
+                    title: this.val(prog, "title"),
+                    start: DateTime.fromFormat(start.toString(), "yyyyMMddHHmmss").toFormat("HH:mm"),
+                    end: DateTime.fromFormat(end.toString(), "yyyyMMddHHmmss").toFormat("HH:mm")
+                })
+            }
+        })
+    }
+
+    private val(node: Element, tagName: string) {
+        const elem = node.querySelector(tagName)
+
+        if (elem) {
+            return elem.textContent
+        }
+        
+        return ""
     }
 
     private byteslice(buffer: Buffer, start: number, length: number) {
